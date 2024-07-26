@@ -1,1 +1,3 @@
-This is a Repository for AI projects done for the purpose of CodSoft Artificial Intelligence Internship
+This is a Repository for the first task of Codsoft AI Internships
+
+A rule-based chatbot (controlled by voice)
