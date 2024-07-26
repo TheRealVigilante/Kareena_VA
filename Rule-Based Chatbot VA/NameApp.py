@@ -10,7 +10,7 @@ class NameApp:
         frame.pack(expand=True)
 
         # Create a label
-        label = tk.Label(frame, text="Enter your name:", font=("Arial", 14))
+        label = tk.Label(frame, text="Enter your name please:", font=("Arial", 14))
         label.pack(pady=10)
 
         # Create an entry widget
@@ -18,7 +18,7 @@ class NameApp:
         self.entry.pack(pady=5)
 
         # Create a button to save the name
-        button = tk.Button(frame, text="Save Name", font=("Arial", 12), command=self.save_name)
+        button = tk.Button(frame, text="Confirm", font=("Arial", 12), command=self.save_name)
         button.pack(pady=10)
 
     def save_name(self):
@@ -32,6 +32,3 @@ def main_name_app():
     app.setup(root)
     root.mainloop()
     return name
-
-if __name__ == "__main__":
-    main_name_app()
