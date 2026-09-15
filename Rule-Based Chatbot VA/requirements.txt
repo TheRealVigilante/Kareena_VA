@@ -1,0 +1,12 @@
+clipboard
+colorama
+psutil
+pyaudio
+pyautogui
+pygame
+pyjokes
+pyttsx3
+pywhatkit
+requests
+SpeechRecognition
+wikipedia
