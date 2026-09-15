@@ -9,4 +9,5 @@ pyttsx3
 pywhatkit
 requests
 SpeechRecognition
+toga==0.5.6
 wikipedia

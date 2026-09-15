@@ -1,70 +1,84 @@
-import tkinter as tk
-from tkinter import messagebox
+import toga
 import pygame
+from toga.style import Pack
+from toga.style.pack import COLUMN, CENTER
 
 
-class TimerApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Countdown Timer")
-        self.root.geometry("400x250")
+class TimerApp(toga.App):
+    def __init__(self):
+        super().__init__("Kareena VA", "org.kareena.timer")
+        self._running = False
 
-        self.time_var = tk.StringVar()
-
-        self.label = tk.Label(root, text="Enter time (HH:MM:SS):", font=("Helvetica", 12))
-        self.label.pack(pady=10)
-
-        self.entry = tk.Entry(root, textvariable=self.time_var, font=("Helvetica", 12), width=10)
-        self.entry.pack(pady=5)
-
-        self.start_button = tk.Button(root, text="Start Timer", command=self.start_timer, font=("Helvetica", 12))
-        self.start_button.pack(pady=10)
-
-        self.time_display = tk.Label(root, text="", font=("Helvetica", 24))
-        self.time_display.pack(pady=10)
-
-        self.timer_running = False
-
-        # Initialize Pygame mixer
+        # Initialise pygame mixer for alarm sound
         pygame.mixer.init()
-        self.alarm_sound = pygame.mixer.Sound("Alarm.mp3")  # Replace with your alarm sound file
+        self._alarm = pygame.mixer.Sound("Alarm.mp3")
 
-    def start_timer(self):
-        if self.timer_running:
+    def startup(self):
+        self._time_input = toga.TextInput(
+            placeholder="HH:MM:SS",
+            style=Pack(flex=1, padding=5)
+        )
+
+        self._display = toga.Label(
+            "",
+            style=Pack(padding=10, text_align=CENTER, font_size=24)
+        )
+
+        start_btn = toga.Button(
+            "Start Timer",
+            on_press=self._start_timer,
+            style=Pack(padding=5)
+        )
+
+        box = toga.Box(
+            children=[
+                toga.Label(
+                    "Enter time (HH:MM:SS):",
+                    style=Pack(padding=(10, 5), text_align=CENTER)
+                ),
+                self._time_input,
+                start_btn,
+                self._display,
+            ],
+            style=Pack(direction=COLUMN, padding=20, alignment=CENTER)
+        )
+
+        self.main_window = toga.MainWindow(title="Countdown Timer", size=(400, 260))
+        self.main_window.content = box
+        self.main_window.show()
+
+    def _start_timer(self, widget):
+        if self._running:
             return
-
-        time_str = self.time_var.get()
+        time_str = self._time_input.value.strip()
         try:
-            h, m, s = map(int, time_str.split(':'))
+            h, m, s = map(int, time_str.split(":"))
             total_seconds = h * 3600 + m * 60 + s
         except ValueError:
-            messagebox.showerror("Invalid Time", "Please enter a valid time in HH:MM:SS format.")
+            self.main_window.error_dialog("Invalid Time", "Please enter a valid time in HH:MM:SS format.")
             return
 
-        self.time_var.set("")
-        self.timer_running = True
-        self.countdown(total_seconds)
+        self._time_input.value = ""
+        self._running = True
+        self._countdown(total_seconds)
 
-    def countdown(self, remaining_seconds):
-        if remaining_seconds <= 0:
-            self.time_display.config(text="Time's up!")
-            self.timer_running = False
-            self.play_alarm()
+    def _countdown(self, remaining):
+        if remaining <= 0:
+            self._display.text = "Time's up!"
+            self._running = False
+            self._alarm.play()
             return
 
-        h = remaining_seconds // 3600
-        m = (remaining_seconds % 3600) // 60
-        s = remaining_seconds % 60
+        h = remaining // 3600
+        m = (remaining % 3600) // 60
+        s = remaining % 60
+        self._display.text = f"{h:02}:{m:02}:{s:02}"
 
-        time_str = f"{h:02}:{m:02}:{s:02}"
-        self.time_display.config(text=time_str)
+        # Schedule next tick after 1 second using Toga's async loop
+        self.loop.call_later(1, self._countdown, remaining - 1)
 
-        self.root.after(1000, self.countdown, remaining_seconds - 1)
-
-    def play_alarm(self):
-        self.alarm_sound.play()
 
 def timer_main():
-    root = tk.Tk()
-    app = TimerApp(root)
-    root.mainloop()
+    """Blocking call — opens the countdown timer window."""
+    app = TimerApp()
+    app.main_loop()

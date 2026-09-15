@@ -1,5 +1,0 @@
-pip install arcade
-TaiPy (better Gui)
-PyGame
-COLORAMA
-beeware

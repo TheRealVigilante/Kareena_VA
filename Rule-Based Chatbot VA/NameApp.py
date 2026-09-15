@@ -1,34 +1,51 @@
-import tkinter as tk
-class NameApp:
-    def setup(self, root):
-        self.root = root
-        self.root.title("Name Input GUI")
-        self.root.geometry("400x200")
+import toga
+from toga.style import Pack
+from toga.style.pack import COLUMN, CENTER
 
-        # Create a frame for better organization
-        frame = tk.Frame(root, padx=20, pady=20)
-        frame.pack(expand=True)
 
-        # Create a label
-        label = tk.Label(frame, text="Enter your name please:", font=("Arial", 14))
-        label.pack(pady=10)
+class NameApp(toga.App):
+    def __init__(self, result_holder):
+        super().__init__("Kareena VA", "org.kareena.name")
+        self._result_holder = result_holder
 
-        # Create an entry widget
-        self.entry = tk.Entry(frame, font=("Arial", 12), width=30)
-        self.entry.pack(pady=5)
+    def startup(self):
+        self._name_input = toga.TextInput(
+            placeholder="Type your name here...",
+            style=Pack(flex=1, padding=5)
+        )
 
-        # Create a button to save the name
-        button = tk.Button(frame, text="Confirm", font=("Arial", 12), command=self.save_name)
-        button.pack(pady=10)
+        confirm_btn = toga.Button(
+            "Confirm",
+            on_press=self._save_name,
+            style=Pack(padding=5)
+        )
 
-    def save_name(self):
-        global name
-        name = self.entry.get()
-        self.root.destroy()  # Close the GUI window
+        box = toga.Box(
+            children=[
+                toga.Label(
+                    "What should I call you?",
+                    style=Pack(padding=(10, 5), text_align=CENTER)
+                ),
+                self._name_input,
+                confirm_btn,
+            ],
+            style=Pack(direction=COLUMN, padding=20, alignment=CENTER)
+        )
+
+        self.main_window = toga.MainWindow(title="Kareena VA — Enter Name", size=(400, 180))
+        self.main_window.content = box
+        self.main_window.show()
+
+    def _save_name(self, widget):
+        name = self._name_input.value.strip()
+        if name:
+            self._result_holder["name"] = name
+            self.exit()
+
 
 def main_name_app():
-    root = tk.Tk()
-    app = NameApp()
-    app.setup(root)
-    root.mainloop()
-    return name
+    """Blocking call — opens the name window and returns the entered name."""
+    result = {}
+    app = NameApp(result)
+    app.main_loop()
+    return result.get("name", "")

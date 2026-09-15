@@ -1,60 +1,71 @@
-import tkinter as tk
+import toga
 import time
+from toga.style import Pack
+from toga.style.pack import COLUMN, ROW, CENTER
 
 
-class StopwatchApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Stopwatch")
-        self.root.geometry("400x200")
+class StopWatchApp(toga.App):
+    def __init__(self):
+        super().__init__("Kareena VA", "org.kareena.stopwatch")
+        self._running = False
+        self._start_time = None
+        self._elapsed = 0.0
 
-        self.time_var = tk.StringVar()
-        self.time_var.set("00:00:00")
+    def startup(self):
+        self._display = toga.Label(
+            "00:00:00",
+            style=Pack(padding=20, text_align=CENTER, font_size=36)
+        )
 
-        self.label = tk.Label(root, textvariable=self.time_var, font=("Helvetica", 48), bg="black", fg="white")
-        self.label.pack(pady=20)
+        start_btn = toga.Button(
+            "Start",
+            on_press=self._start,
+            style=Pack(padding=5, flex=1, background_color="#28a745", color="white")
+        )
 
-        button_frame = tk.Frame(root)
-        button_frame.pack(pady=10)
+        reset_btn = toga.Button(
+            "Reset",
+            on_press=self._reset,
+            style=Pack(padding=5, flex=1, background_color="#007bff", color="white")
+        )
 
-        self.start_button = tk.Button(button_frame, text="Start", command=self.start, font=("Helvetica", 12), width=10,
-                                      bg="green", fg="white")
-        self.start_button.grid(row=0, column=0, padx=5)
+        btn_row = toga.Box(
+            children=[start_btn, reset_btn],
+            style=Pack(direction=ROW, padding=10)
+        )
 
-        self.reset_button = tk.Button(button_frame, text="Reset", command=self.reset, font=("Helvetica", 12), width=10,
-                                      bg="blue", fg="white")
-        self.reset_button.grid(row=0, column=1, padx=5)
+        box = toga.Box(
+            children=[self._display, btn_row],
+            style=Pack(direction=COLUMN, padding=20, alignment=CENTER)
+        )
 
-        self.running = False
-        self.start_time = None
-        self.elapsed_time = 0
-        self.timer_id = None
+        self.main_window = toga.MainWindow(title="Stopwatch", size=(400, 200))
+        self.main_window.content = box
+        self.main_window.show()
 
-    def start(self):
-        if not self.running:
-            self.running = True
-            if self.start_time is None:
-                self.start_time = time.time() - self.elapsed_time
-            self.update()
+    def _start(self, widget):
+        if not self._running:
+            self._running = True
+            if self._start_time is None:
+                self._start_time = time.time() - self._elapsed
+            self._update()
 
-    def reset(self):
-        self.running = False
-        if self.timer_id:
-            self.root.after_cancel(self.timer_id)
-        self.start_time = None
-        self.elapsed_time = 0
-        self.time_var.set("00:00:00")
+    def _reset(self, widget):
+        self._running = False
+        self._start_time = None
+        self._elapsed = 0.0
+        self._display.text = "00:00:00"
 
-    def update(self):
-        if self.running:
-            self.elapsed_time = time.time() - self.start_time
-            minutes, seconds = divmod(self.elapsed_time, 60)
+    def _update(self):
+        if self._running:
+            self._elapsed = time.time() - self._start_time
+            minutes, seconds = divmod(self._elapsed, 60)
             hours, minutes = divmod(minutes, 60)
-            time_str = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
-            self.time_var.set(time_str)
-            self.timer_id = self.root.after(100, self.update)
+            self._display.text = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
+            self.loop.call_later(0.1, self._update)
+
 
 def stopwatch_main():
-    root = tk.Tk()
-    app = StopwatchApp(root)
-    root.mainloop()
+    """Blocking call — opens the stopwatch window."""
+    app = StopWatchApp()
+    app.main_loop()

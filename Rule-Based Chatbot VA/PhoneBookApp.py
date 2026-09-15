@@ -1,104 +1,139 @@
-import tkinter as tk
-from tkinter import messagebox
 import json
 import os
+import toga
+from toga.style import Pack
+from toga.style.pack import COLUMN, ROW
 
 
-class PhoneBookApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Phone Book")
-        self.root.geometry("500x400")
+PHONEBOOK_FILE = "phonebook.json"
 
-        self.phonebook_file = "phonebook.json"
-        self.phonebook = self.load_phonebook()
 
-        # GUI Elements
-        self.name_var = tk.StringVar()
-        self.number_var = tk.StringVar()
+def _load_phonebook():
+    if not os.path.exists(PHONEBOOK_FILE):
+        return {}
+    with open(PHONEBOOK_FILE, "r") as f:
+        return json.load(f)
 
-        self.name_label = tk.Label(root, text="Name", font=("Helvetica", 12))
-        self.name_label.pack(pady=5)
-        self.name_entry = tk.Entry(root, textvariable=self.name_var, font=("Helvetica", 12), width=25)
-        self.name_entry.pack(pady=5)
 
-        self.number_label = tk.Label(root, text="Phone Number", font=("Helvetica", 12))
-        self.number_label.pack(pady=5)
-        self.number_entry = tk.Entry(root, textvariable=self.number_var, font=("Helvetica", 12), width=25)
-        self.number_entry.pack(pady=5)
+def _save_phonebook(phonebook):
+    with open(PHONEBOOK_FILE, "w") as f:
+        json.dump(phonebook, f)
 
-        button_frame = tk.Frame(root)
-        button_frame.pack(pady=10)
 
-        self.save_button = tk.Button(button_frame, text="Save", command=self.save_number, font=("Helvetica", 12),
-                                     width=10, bg="green", fg="white")
-        self.save_button.grid(row=0, column=0, padx=5)
+class PhoneBookApp(toga.App):
+    def __init__(self, result_holder):
+        super().__init__("Kareena VA", "org.kareena.phonebook")
+        self._result_holder = result_holder
+        self._phonebook = _load_phonebook()
 
-        self.delete_button = tk.Button(button_frame, text="Delete", command=self.delete_number, font=("Helvetica", 12),
-                                       width=10, bg="red", fg="white")
-        self.delete_button.grid(row=0, column=1, padx=5)
+    def startup(self):
+        # --- Input fields ---
+        self._name_input = toga.TextInput(
+            placeholder="Name",
+            style=Pack(flex=1, padding=5)
+        )
+        self._number_input = toga.TextInput(
+            placeholder="Phone Number",
+            style=Pack(flex=1, padding=5)
+        )
 
-        self.choose_button = tk.Button(button_frame, text="Choose", command=self.choose_number, font=("Helvetica", 12),
-                                       width=10, bg="blue", fg="white")
-        self.choose_button.grid(row=0, column=2, padx=5)
+        # --- Contact list ---
+        self._table = toga.Table(
+            headings=["Name", "Number"],
+            data=self._table_data(),
+            style=Pack(flex=1, padding=5)
+        )
 
-        self.numbers_listbox = tk.Listbox(root, font=("Helvetica", 12), width=50)
-        self.numbers_listbox.pack(pady=10)
-        self.update_listbox()
+        # --- Buttons ---
+        save_btn = toga.Button(
+            "Save",
+            on_press=self._save_contact,
+            style=Pack(padding=5, flex=1)
+        )
+        delete_btn = toga.Button(
+            "Delete",
+            on_press=self._delete_contact,
+            style=Pack(padding=5, flex=1)
+        )
+        choose_btn = toga.Button(
+            "Choose",
+            on_press=self._choose_contact,
+            style=Pack(padding=5, flex=1)
+        )
 
-    def load_phonebook(self):
-        if not os.path.exists(self.phonebook_file):
-            return {}
-        with open(self.phonebook_file, "r") as f:
-            return json.load(f)
+        btn_row = toga.Box(
+            children=[save_btn, delete_btn, choose_btn],
+            style=Pack(direction=ROW, padding=5)
+        )
 
-    def save_phonebook(self):
-        with open(self.phonebook_file, "w") as f:
-            json.dump(self.phonebook, f)
+        box = toga.Box(
+            children=[
+                toga.Label("Name:", style=Pack(padding=(5, 5, 0, 5))),
+                self._name_input,
+                toga.Label("Phone Number:", style=Pack(padding=(5, 5, 0, 5))),
+                self._number_input,
+                btn_row,
+                self._table,
+            ],
+            style=Pack(direction=COLUMN, padding=10)
+        )
 
-    def update_listbox(self):
-        self.numbers_listbox.delete(0, tk.END)
-        for name, number in self.phonebook.items():
-            self.numbers_listbox.insert(tk.END, f"{name}: {number}")
+        self.main_window = toga.MainWindow(title="Phone Book", size=(500, 420))
+        self.main_window.content = box
+        self.main_window.show()
 
-    def save_number(self):
-        name = self.name_var.get().strip()
-        number = self.number_var.get().strip()
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _table_data(self):
+        return [(name, number) for name, number in self._phonebook.items()]
+
+    def _refresh_table(self):
+        self._table.data = self._table_data()
+
+    # ------------------------------------------------------------------
+    # Button handlers
+    # ------------------------------------------------------------------
+
+    def _save_contact(self, widget):
+        name = self._name_input.value.strip()
+        number = self._number_input.value.strip()
         if name and number:
-            self.phonebook[name] = number
-            self.save_phonebook()
-            self.update_listbox()
-            self.name_var.set("")
-            self.number_var.set("")
-            messagebox.showinfo("Success", "Number saved successfully!")
+            self._phonebook[name] = number
+            _save_phonebook(self._phonebook)
+            self._refresh_table()
+            self._name_input.value = ""
+            self._number_input.value = ""
+            self.main_window.info_dialog("Success", "Contact saved successfully!")
         else:
-            messagebox.showwarning("Input Error", "Please enter both name and number.")
+            self.main_window.error_dialog("Input Error", "Please enter both a name and a phone number.")
 
-    def delete_number(self):
-        selected = self.numbers_listbox.curselection()
-        if selected:
-            name = self.numbers_listbox.get(selected[0]).split(":")[0]
-            if name in self.phonebook:
-                del self.phonebook[name]
-                self.save_phonebook()
-                self.update_listbox()
-                messagebox.showinfo("Success", "Number deleted successfully!")
+    def _delete_contact(self, widget):
+        selection = self._table.selection
+        if selection:
+            name = selection.name
+            if name in self._phonebook:
+                del self._phonebook[name]
+                _save_phonebook(self._phonebook)
+                self._refresh_table()
+                self.main_window.info_dialog("Success", "Contact deleted successfully!")
         else:
-            messagebox.showwarning("Selection Error", "Please select a number to delete.")
+            self.main_window.error_dialog("Selection Error", "Please select a contact to delete.")
 
-    def choose_number(self):
-        global final_num
-        selected = self.numbers_listbox.curselection()
-        if selected:
-            number = self.numbers_listbox.get(selected[0]).split(":")[1].strip()
-            messagebox.showinfo("Chosen Number", f"Selected Phone Number: {number}")
-            self.root.destroy()  # Close the GUI after showing the chosen number
-            final_num= number
+    def _choose_contact(self, widget):
+        selection = self._table.selection
+        if selection:
+            number = selection.number
+            self._result_holder["number"] = number
+            self.exit()
         else:
-            messagebox.showwarning("Selection Error", "Please select a number to choose.")
+            self.main_window.error_dialog("Selection Error", "Please select a contact to choose.")
+
 
 def phone_main():
-    root = tk.Tk()
-    app = PhoneBookApp(root)
-    root.mainloop()
-    return final_num
+    """Blocking call — opens the phonebook and returns the chosen number."""
+    result = {}
+    app = PhoneBookApp(result)
+    app.main_loop()
+    return result.get("number", "")
