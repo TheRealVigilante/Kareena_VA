@@ -1,3 +1,4 @@
+# ── Voice assistant core ──────────────────────
 clipboard
 psutil
 pyaudio
@@ -8,5 +9,12 @@ pyttsx3
 pywhatkit
 requests
 SpeechRecognition
-toga==0.5.6
 wikipedia
+
+# ── GUI ───────────────────────────────────────
+toga==0.5.6
+
+# ── Agent + MCP tools ─────────────────────────
+openai                  # LM Studio + Gemini OpenAI-compat client
+duckduckgo-search       # DDG web search, no API key needed
+python-dotenv           # load .env config

@@ -25,6 +25,10 @@ import wikipedia
 import TimerApp
 import StopWatchApp
 import PhoneBookApp
+import agent as _agent
+
+# Conversation history for the agent — grows across calls within one session
+_agent_history: list = []
 
 # ---------------------------------------------------------------------------
 # GUI callback hooks (injected by KareenaApp at startup)
@@ -196,6 +200,7 @@ def instructions():
         "CPU usage — say 'cpu'",
         "Set a timer — say 'timer'",
         "Start a stopwatch — say 'stopwatch'",
+        "Ask the AI agent anything — say 'agent' followed by your question",
         "Exit — say 'exit'",
     ]
     for line in lines:
@@ -206,6 +211,26 @@ def instructions():
 def intro():
     speak("Always say 'hello' to activate me — it is my wake word.")
     speak("Say 'instructions' to get a full list of commands.")
+
+
+def _run_agent(query: str) -> None:
+    """Send *query* to the agent, speak and log the response."""
+    global _agent_history
+    _status_fn("Agent thinking...")
+    _log_fn(f"[Agent] ← {query}")
+    try:
+        answer = _agent.run(query, conversation_history=_agent_history)
+        # Keep last 10 turns in history so the agent has context
+        _agent_history.append({"role": "user",      "content": query})
+        _agent_history.append({"role": "assistant",  "content": answer})
+        _agent_history = _agent_history[-20:]   # cap at 20 messages (10 turns)
+        _log_fn(f"[Agent] → {answer}")
+        speak(answer)
+    except Exception as e:
+        _log_fn(f"[Agent] Error: {e}")
+        speak("Sorry, the agent ran into a problem. Please try again.")
+    finally:
+        _status_fn("Idle")
 
 
 # ---------------------------------------------------------------------------
@@ -334,14 +359,24 @@ def take_query(stop_event):
                 speak("Opening the stopwatch")
                 StopWatchApp.stopwatch_main()
 
+            elif "agent" in query:
+                # Explicit agent invocation — strip wake words and pass rest to agent
+                q = re.sub(r'\bhello\b|\bagent\b', '', query).strip()
+                if not q:
+                    speak("Sure, what would you like me to help with?")
+                    q = takeCommand()
+                    if not q:
+                        continue
+                _run_agent(q)
+
             elif "exit" in query:
                 terminate()
                 stop_event.set()
 
             else:
+                # Nothing matched — pass to the agent as a smart fallback
                 q = query.replace("hello", "").strip()
-                webbrowser.open(f"https://www.google.com/search?q={q}")
-                speak(f"Here are the search results for {q}")
+                _run_agent(q)
 
         except AttributeError:
             continue
