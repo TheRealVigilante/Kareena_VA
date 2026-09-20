@@ -52,16 +52,98 @@ def set_user_name(name):
     user_name = name
 
 # ---------------------------------------------------------------------------
+# Output cleaning
+# ---------------------------------------------------------------------------
+
+def clean_for_speech(text: str) -> str:
+    """
+    Strip markdown and fix encoding so text sounds natural when spoken
+    and displays correctly in the GUI.
+
+    Handles:
+    - Mojibake from UTF-8/Windows-1252 mismatch  (â€™ → ')
+    - Markdown bold/italic  (**text** → text)
+    - Markdown headers      (## Heading → Heading)
+    - Markdown bullets      (- item → item)
+    - Markdown code fences  (``` ... ```)
+    - Excess blank lines
+    """
+    # ── Fix common mojibake sequences ────────────────────────────────────────
+    replacements = {
+        "\u00e2\u20ac\u2122": "'",    # â€™  right single quote
+        "\u00e2\u20ac\u0153": '"',    # â€œ  left double quote
+        "\u00e2\u20ac\x9d": '"',      # â€   right double quote
+        "\u00e2\u20ac\u201c": "\u2014",  # â€"  em dash
+        "\u00e2\u20ac\u201d": "\u2013",  # â€"  en dash
+        "\u00e2\u20ac\xa2": "\u2022",    # â€¢  bullet
+        "\u00e2\u20ac\xa6": "...",       # â€¦  ellipsis
+        "\u00c3\xa9": "\u00e9",  # Ã©  e acute
+        "\u00c3\xa8": "\u00e8",  # Ã¨  e grave
+        "\u00c3\xa0": "\u00e0",  # Ã   a grave
+        "\u00c3\xa2": "\u00e2",  # Ã¢  a circumflex
+        "\u00c3\xae": "\u00ee",  # Ã®  i circumflex
+        "\u00c3\xb4": "\u00f4",  # Ã´  o circumflex
+        "\u00c3\xbb": "\u00fb",  # Ã»  u circumflex
+        "\u00c3\xa7": "\u00e7",  # Ã§  c cedilla
+        "\u00c3\xbc": "\u00fc",  # Ã¼  u umlaut
+        "\u00c2\xb0": "\u00b0",  # Â°  degree sign
+        "\u00c2\xa3": "\u00a3",  # Â£  pound sign
+        "\u00c2\xa9": "(c)",     # Â©  copyright
+        "\u00c2\xae": "(r)",     # Â®  registered
+        "\u00e2\u0084\u00a2": "(tm)",  # â„¢  trademark
+    }
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+
+    # Try re-encoding if mojibake is still present
+    try:
+        text = text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+
+    # Catch any remaining common stragglers after re-encode
+    text = text.replace("\u00e2\u20ac\u201c", "\u2014")  # em dash
+    text = text.replace("\u00e2\u20ac\u201d", "\u2013")  # en dash
+    text = text.replace("\u00e2\u20ac\u2122", "'")       # right single quote
+    # Replace dashes with a natural spoken pause
+    text = text.replace("\u2014", ", ")   # em dash → comma pause
+    text = text.replace("\u2013", " to ") # en dash → "to" (e.g. 2010-2020)
+
+    # ── Strip markdown ────────────────────────────────────────────────────────
+    # Code fences
+    text = re.sub(r"```[\s\S]*?```", "", text)
+    text = re.sub(r"`[^`]+`", "", text)
+    # Headers (## Heading → Heading)
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # Bold / italic
+    text = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)
+    text = re.sub(r"_{1,3}([^_]+)_{1,3}", r"\1", text)
+    # Bullet points (-, *, •) — replace with a pause comma
+    text = re.sub(r"^\s*[-*•]\s+", "", text, flags=re.MULTILINE)
+    # Numbered lists (1. item → item)
+    text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
+    # Links [text](url) → text
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    # Horizontal rules
+    text = re.sub(r"^[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
+    # Collapse multiple blank lines into one
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
 # Speech
 # ---------------------------------------------------------------------------
 
-def speak(audio):
-    """Synthesise speech and log the text to the GUI."""
-    _log_fn(f"Kareena: {audio}")
+def speak(audio: str) -> None:
+    """Clean, log, and synthesise speech."""
+    cleaned = clean_for_speech(audio)
+    _log_fn(f"Kareena: {cleaned}")
     engine = pyttsx3.init('sapi5')
     voices = engine.getProperty('voices')
     engine.setProperty('voice', voices[1].id)
-    engine.say(audio)
+    engine.say(cleaned)
     engine.runAndWait()
 
 def takeCommand():

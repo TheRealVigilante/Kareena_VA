@@ -29,7 +29,7 @@ load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-_LM_BASE_URL   = os.getenv("LM_STUDIO_BASE_URL", "http://localhost:1234/v1")
+_LM_BASE_URL   = os.getenv("LM_STUDIO_BASE_URL", "http://localhost:1234/v1/")
 _LM_API_KEY    = os.getenv("LM_STUDIO_API_KEY",  "lm-studio")
 _LM_MODEL      = os.getenv("LM_STUDIO_MODEL",    "spark-x2.5-4b")
 
@@ -82,7 +82,9 @@ def _is_lm_studio_running() -> bool:
     """Quick check whether LM Studio's server is reachable."""
     import urllib.request
     try:
-        urllib.request.urlopen(_LM_BASE_URL.rstrip("/v1").rstrip("/") + "/v1/models", timeout=2)
+        # Probe the models endpoint — works regardless of trailing slash
+        probe = _LM_BASE_URL.rstrip("/") + "/models"
+        urllib.request.urlopen(probe, timeout=2)
         return True
     except Exception:
         return False

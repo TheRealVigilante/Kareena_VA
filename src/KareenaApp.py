@@ -1,7 +1,12 @@
+import sys
 import threading
 import toga
 from toga.style import Pack
 from toga.style.pack import COLUMN, ROW
+
+# Force UTF-8 output so Unicode characters render correctly in the terminal
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 import assistant_core as core
 import NameApp
