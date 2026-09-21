@@ -7,8 +7,11 @@
 #  run_tool() dispatches a tool call by name and returns a string result.
 # ─────────────────────────────────────────────────────────────────────────────
 
+import ast
 import datetime
 import json
+import math
+import operator
 import os
 import re
 
@@ -172,6 +175,113 @@ def forget(key: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  6. Math  (safe expression evaluator)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Safe whitelist of AST node types and operators
+_SAFE_NODES = (
+    ast.Expression, ast.BinOp, ast.UnaryOp, ast.Call, ast.Constant, ast.Name,
+    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod,
+    ast.Pow, ast.USub, ast.UAdd,
+)
+
+_SAFE_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+# Allowed math functions and constants
+_MATH_ENV = {
+    name: getattr(math, name)
+    for name in (
+        "sqrt", "cbrt", "exp", "log", "log2", "log10",
+        "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+        "sinh", "cosh", "tanh",
+        "ceil", "floor", "factorial", "gcd", "lcm",
+        "degrees", "radians", "hypot", "isqrt",
+        "pi", "e", "tau", "inf", "nan",
+    )
+    if hasattr(math, name)
+}
+_MATH_ENV["abs"] = abs
+_MATH_ENV["round"] = round
+_MATH_ENV["pow"] = pow
+
+
+def _safe_eval(node):
+    """Recursively evaluate a whitelisted AST node."""
+    if not isinstance(node, _SAFE_NODES):
+        raise ValueError(f"Unsafe expression: {ast.dump(node)}")
+    if isinstance(node, ast.Expression):
+        return _safe_eval(node.body)
+    if isinstance(node, ast.Constant):
+        if not isinstance(node.value, (int, float, complex)):
+            raise ValueError(f"Unsupported literal type: {type(node.value).__name__}")
+        return node.value
+    if isinstance(node, ast.Name):
+        val = _MATH_ENV.get(node.id)
+        if val is None or callable(val):
+            raise ValueError(f"Unknown name: '{node.id}'")
+        return val
+    if isinstance(node, ast.BinOp):
+        op_fn = _SAFE_OPERATORS.get(type(node.op))
+        if op_fn is None:
+            raise ValueError(f"Unsupported binary operator: {type(node.op).__name__}")
+        return op_fn(_safe_eval(node.left), _safe_eval(node.right))
+    if isinstance(node, ast.UnaryOp):
+        op_fn = _SAFE_OPERATORS.get(type(node.op))
+        if op_fn is None:
+            raise ValueError(f"Unsupported unary operator: {type(node.op).__name__}")
+        return op_fn(_safe_eval(node.operand))
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Name):
+            raise ValueError("Only named function calls are allowed.")
+        fn = _MATH_ENV.get(node.func.id)
+        if fn is None:
+            raise ValueError(f"Unknown function: '{node.func.id}'")
+        args = [_safe_eval(a) for a in node.args]
+        if node.keywords:
+            raise ValueError("Keyword arguments are not supported.")
+        return fn(*args)
+    raise ValueError(f"Unsupported node type: {type(node).__name__}")
+
+
+def calculate(expression: str) -> str:
+    """Safely evaluate a mathematical expression and return the result.
+
+    Supports arithmetic operators (+, -, *, /, //, %, **) and common math
+    functions from the ``math`` module (sqrt, sin, cos, log, etc.) as well
+    as the constants pi, e, and tau.
+
+    Examples::
+
+        calculate("2 ** 10")              # 1024
+        calculate("sqrt(144)")            # 12.0
+        calculate("sin(pi / 2)")          # 1.0
+        calculate("log(e ** 3)")          # 3.0
+        calculate("(3 + 4) * 2 - 1")     # 13
+    """
+    try:
+        tree = ast.parse(expression.strip(), mode="eval")
+        result = _safe_eval(tree)
+        # Return a clean representation
+        if isinstance(result, float) and result.is_integer():
+            return str(int(result))
+        return str(result)
+    except (SyntaxError, ValueError, TypeError, ZeroDivisionError) as e:
+        return f"Math error: {e}"
+    except Exception as e:
+        return f"Unexpected error: {e}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Tool registry
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -306,6 +416,34 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate",
+            "description": (
+                "Evaluate a mathematical expression and return the numeric result. "
+                "Supports arithmetic operators (+, -, *, /, //, %, **) and common "
+                "math functions such as sqrt(), sin(), cos(), tan(), log(), log2(), "
+                "log10(), exp(), ceil(), floor(), factorial(), degrees(), radians(), "
+                "hypot(), abs(), round(), and pow(). Also recognises the constants "
+                "pi, e, and tau. Use this for any calculation instead of reasoning "
+                "through arithmetic yourself."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "description": (
+                            "A valid mathematical expression string, e.g. "
+                            "'sqrt(2) * pi', '2 ** 10', or 'log(e ** 3)'."
+                        ),
+                    },
+                },
+                "required": ["expression"],
+            },
+        },
+    },
 ]
 
 # Maps tool name → callable
@@ -319,6 +457,7 @@ _TOOL_MAP = {
     "remember": remember,
     "recall": recall,
     "forget": forget,
+    "calculate": calculate,
 }
 
 
