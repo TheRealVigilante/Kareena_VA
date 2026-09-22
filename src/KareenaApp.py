@@ -1,5 +1,7 @@
 import sys
 import threading
+import datetime
+import os
 import toga
 from toga.style import Pack
 from toga.style.pack import COLUMN, ROW
@@ -7,6 +9,13 @@ from toga.style.pack import COLUMN, ROW
 # Force UTF-8 output so Unicode characters render correctly in the terminal
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+try:
+    import pygame
+    pygame.mixer.init()
+    _pygame_ok = True
+except Exception:
+    _pygame_ok = False
 
 import assistant_core as core
 import NameApp
@@ -46,6 +55,11 @@ class KareenaApp(toga.App):
             on_press=self._stop_listening,
             style=Pack(flex=1, padding=5)
         )
+        save_log_btn = toga.Button(
+            "💾  Save Log",
+            on_press=self._save_log,
+            style=Pack(flex=1, padding=5)
+        )
         exit_btn = toga.Button(
             "✕  Exit",
             on_press=self._exit_app,
@@ -53,7 +67,7 @@ class KareenaApp(toga.App):
         )
 
         btn_row = toga.Box(
-            children=[listen_btn, stop_btn, exit_btn],
+            children=[listen_btn, stop_btn, save_log_btn, exit_btn],
             style=Pack(direction=ROW, padding=5)
         )
 
@@ -117,6 +131,20 @@ class KareenaApp(toga.App):
     def _init_assistant(self):
         """Run once at startup: collect name, greet, then begin loop."""
         core.set_user_name(NameApp.main_name_app())
+        # ── Startup chime ────────────────────────────────────────────────
+        if _pygame_ok:
+            try:
+                # Prefer a dedicated startup.mp3 if present, else use Alarm.mp3
+                _here = os.path.dirname(os.path.abspath(__file__))
+                chime_path = os.path.join(_here, "startup.mp3")
+                if not os.path.exists(chime_path):
+                    chime_path = os.path.join(_here, "Alarm.mp3")
+                chime = pygame.mixer.Sound(chime_path)
+                chime.set_volume(0.3)
+                chime.play()
+            except Exception as e:
+                print(f"[Startup sound] Could not play chime: {e}")
+        # ── Greeting ─────────────────────────────────────────────────────
         core.greet()
         core.speak("I am Kareena, your virtual assistant. How can I help you?")
         core.intro()
@@ -136,6 +164,21 @@ class KareenaApp(toga.App):
         self._stop_event.set()
         self._set_status("Stopped")
         self._append_log("Kareena: Voice loop stopped. Press 'Start Listening' to resume.")
+
+    def _save_log(self, widget):
+        """Export the current chat log to a timestamped file on the Desktop."""
+        content = self._chat_log.value or ""
+        if not content.strip():
+            self.main_window.info_dialog("Nothing to Save", "The chat log is empty.")
+            return
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        os.makedirs(desktop, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"kareena_log_{timestamp}.txt"
+        filepath = os.path.join(desktop, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content)
+        self.main_window.info_dialog("Log Saved", f"Chat log saved to:\n{filepath}")
 
     def _exit_app(self, widget):
         self._stop_event.set()

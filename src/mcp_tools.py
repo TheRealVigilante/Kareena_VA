@@ -66,6 +66,33 @@ def fetch_url(url: str, max_chars: int = 3000) -> str:
         return f"Fetch error: {e}"
 
 
+def summarise_url(url: str, focus: str = "") -> str:
+    """Fetch *url* and return a rich text extract suitable for LLM summarisation.
+
+    Unlike fetch_url this function:
+    - Uses a larger character budget (6000 chars) so the LLM has enough context.
+    - Accepts an optional *focus* hint (e.g. 'key findings', 'release date')
+      which is prepended to the result so the model knows what to extract.
+    - Strips scripts and style blocks before general HTML removal for cleaner text.
+    """
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (KareenaVA/1.0)"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        html = resp.text
+        # Remove <script> and <style> blocks entirely
+        html = re.sub(r"<(script|style)[^>]*>[\s\S]*?</\1>", " ", html, flags=re.IGNORECASE)
+        # Strip remaining HTML tags
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s+", " ", text).strip()
+        extract = text[:6000] + ("…" if len(text) > 6000 else "")
+        if focus:
+            return f"[Focus: {focus}]\n\n{extract}"
+        return extract
+    except Exception as e:
+        return f"Summarise error: {e}"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  3. Filesystem  (sandboxed to _FS_ROOT)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -319,6 +346,21 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "summarise_url",
+            "description": "Fetch a web page and return a rich text extract (up to 6000 chars, scripts/styles removed) for you to summarise in natural language. Prefer this over fetch_url when the user asks you to summarise, explain, or describe the content of a URL. Optionally pass a focus hint to steer the summary.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The full URL to summarise."},
+                    "focus": {"type": "string", "description": "Optional topic to focus the summary on, e.g. 'main argument', 'release date', 'pricing'.", "default": ""},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
             "description": "Read a file from the local filesystem. Only files inside the project directory are accessible.",
             "parameters": {
@@ -450,6 +492,7 @@ TOOL_SCHEMAS = [
 _TOOL_MAP = {
     "duckduckgo_search": duckduckgo_search,
     "fetch_url": fetch_url,
+    "summarise_url": summarise_url,
     "read_file": read_file,
     "write_file": write_file,
     "list_files": list_files,

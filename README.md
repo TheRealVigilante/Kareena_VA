@@ -26,8 +26,13 @@ This version is a significant architectural upgrade:
 - **Full Toga (BeeWare) GUI** — the entire assistant now has a native desktop window with a live chat log, status indicator, and voice controls. All sub-app windows (Timer, Stopwatch, etc.) were migrated from `tkinter` to Toga.
 - **Local AI Agent** — a ReAct-style tool-calling agent powered by a local LLM running in LM Studio. The agent handles any command that doesn't match the hardcoded rules, and can also be invoked explicitly.
 - **Gemini API fallback** — if LM Studio is not running, the agent automatically falls back to Google's `gemma-4-31b-it` model via the Gemini API (free tier).
-- **MCP-style tools** — the agent has access to a suite of tools it can call autonomously: web search (DuckDuckGo), URL fetching, file read/write, time/timezone queries, and a persistent memory store.
+- **MCP-style tools** — the agent has access to a suite of tools it can call autonomously: web search (DuckDuckGo), URL fetching and summarisation, file read/write, time/timezone queries, and a persistent memory store.
 - **Output cleaner** — agent responses are automatically stripped of markdown and encoding artifacts before being spoken aloud.
+- **Voice retry loop** — if speech recognition fails, Kareena retries up to 3 times with spoken feedback instead of silently dropping the input.
+- **To-do management** — saved to-dos can now be deleted individually or cleared in bulk.
+- **Battery, calendar, and chat mode** — new built-in commands for battery status, the current month's calendar, and a free-chat mode that removes the wake-word requirement.
+- **Startup chime** — a short sound plays after the name prompt to signal Kareena is ready.
+- **Save Log button** — the GUI now has a 💾 button that exports the full chat log to the Desktop.
 
 ---
 
@@ -143,12 +148,10 @@ python src/main.py
 
 Kareena starts by opening a native desktop window and asking for your name. After that, she greets you and begins listening for voice commands.
 
-**Wake word:** every command must start with **"hello"**.
-
 The command loop works in order:
 
 1. Hardcoded rules are checked first — fast, offline, no LLM needed
-2. If you say **"hello agent ..."**, the agent is invoked directly
+2. If you say **"agent ..."**, the agent is invoked directly
 3. If nothing matches, the agent is used as a smart fallback
 
 The agent runs a ReAct loop — it decides which tools to call, executes them, and synthesises a spoken answer. LM Studio is tried first; if it is unreachable, Gemini is used automatically instead.
@@ -161,50 +164,55 @@ The agent runs a ReAct loop — it decides which tools to call, executes them, a
 
 | Say this | What happens |
 |---|---|
-| `hello google` | Opens Google |
-| `hello github` | Opens GitHub |
-| `hello facebook` | Opens Facebook |
-| `hello instagram` | Opens Instagram |
-| `hello twitter` | Opens Twitter |
-| `hello onedrive` | Opens OneDrive |
-| `hello [site] website` | Opens `https://www.[site].com` |
-| `hello from wikipedia search [topic]` | Reads a Wikipedia summary |
-| `hello tell me your name` | Kareena introduces herself |
-| `hello what time` | Tells the current time |
-| `hello day` | Tells today's date |
-| `hello weather` | Asks for a city then fetches weather |
-| `hello youtube` | Asks what to play then opens YouTube |
-| `hello message` | Opens phonebook and sends a WhatsApp message |
-| `hello joke` | Tells a random programming joke |
-| `hello to do` | Saves a to-do note |
-| `hello saved` | Reads all saved to-dos |
-| `hello clipboard` | Reads current clipboard content |
-| `hello screenshot` | Takes a screenshot |
-| `hello cpu` | Reports CPU usage |
-| `hello timer` | Opens the countdown timer window |
-| `hello stopwatch` | Opens the stopwatch window |
-| `hello instructions` | Lists all available commands |
-| `hello exit` | Says goodbye and closes the assistant |
+| `google` | Opens Google |
+| `github` | Opens GitHub |
+| `facebook` | Opens Facebook |
+| `instagram` | Opens Instagram |
+| `twitter` | Opens Twitter |
+| `onedrive` | Opens OneDrive |
+| `[site] website` | Opens `https://www.[site].com` |
+| `from wikipedia search [topic]` | Reads a Wikipedia summary |
+| `tell me your name` | Kareena introduces herself |
+| `what time` | Tells the current time |
+| `day` | Tells today's date |
+| `calendar` | Displays and announces the current month's calendar |
+| `weather` | Asks for a city then fetches weather |
+| `youtube` | Asks what to play then opens YouTube |
+| `message` | Opens phonebook and sends a WhatsApp message |
+| `joke` | Tells a random programming joke |
+| `to do` | Saves a to-do note |
+| `saved` | Reads all saved to-dos |
+| `delete to do` | Lists to-dos by number and deletes the chosen one |
+| `clear to dos` | Confirms then wipes the entire to-do list |
+| `battery` | Reports battery percentage, charging state, and time remaining |
+| `clipboard` | Reads current clipboard content |
+| `screenshot` | Takes a screenshot |
+| `cpu` | Reports CPU usage |
+| `timer` | Opens the countdown timer window |
+| `stopwatch` | Opens the stopwatch window |
+| `chat` | Enters free-chat mode — bypasses all built-in rules until you say "exit chat" |
+| `instructions` | Lists all available commands |
+| `exit` | Says goodbye and closes the assistant |
 
 ### Agent commands
 
 | Say this | What happens |
 |---|---|
-| `hello agent [any question]` | Sends the question directly to the AI agent |
-| `hello agent` | Kareena asks what you need, then routes it to the agent |
+| `agent [any question]` | Sends the question directly to the AI agent |
+| `agent` | Kareena asks what you need, then routes it to the agent |
 | Any unrecognised command | Automatically falls back to the agent |
 
 ### Agent tool examples
 
 ```
-"hello agent search for the latest news about Python"
-"hello agent what time is it in Tokyo right now?"
-"hello agent remember my favourite colour is blue"
-"hello agent what do you remember about me?"
-"hello agent fetch the content of https://example.com"
-"hello agent write my shopping list to a file called shopping.txt"
-"hello agent read the file data.txt"
-"hello agent forget my favourite colour"
+"agent search for the latest news about Python"
+"agent what time is it in Tokyo right now?"
+"agent remember my favourite colour is blue"
+"agent what do you remember about me?"
+"agent fetch the content of https://example.com"
+"agent write my shopping list to a file called shopping.txt"
+"agent read the file data.txt"
+"agent forget my favourite colour"
 ```
 
 ---
@@ -217,6 +225,7 @@ The agent picks and calls these tools automatically based on your request:
 |---|---|
 | `duckduckgo_search` | Web search — no API key required |
 | `fetch_url` | Fetches and reads the text content of any URL |
+| `summarise_url` | Fetches a URL, strips scripts/styles, and returns up to 6000 chars for the LLM to summarise. Accepts an optional focus hint (e.g. "pricing", "release date") |
 | `read_file` | Reads a file from the project directory |
 | `write_file` | Writes text to a file in the project directory |
 | `list_files` | Lists files in the project directory |
@@ -226,6 +235,27 @@ The agent picks and calls these tools automatically based on your request:
 | `forget` | Deletes a memory entry |
 
 File access is sandboxed — the agent can only read and write inside the `src/` folder.
+
+---
+
+## GUI Features
+
+| Button / Indicator | Description |
+|---|---|
+| 🎤 **Start Listening** | Starts the voice command loop |
+| 🔇 **Stop** | Pauses the voice loop (resume with Start Listening) |
+| 💾 **Save Log** | Exports the full chat log to a timestamped `.txt` file on your Desktop |
+| ✕ **Exit** | Says goodbye and closes the assistant |
+| **Status bar** | Shows current state: Idle / Listening / Recognising / Agent thinking… / Chat Mode |
+
+### Startup chime
+A short sound plays automatically after you enter your name to signal Kareena is ready. Place a `startup.mp3` in `src/` to use a custom chime; otherwise `Alarm.mp3` is used at low volume.
+
+### Voice retry
+If speech recognition fails, Kareena retries up to **3 times** with a spoken countdown ("Attempt 2 of 3 — please try again") before giving up, instead of silently dropping the input.
+
+### Chat mode
+Say **`chat`** to enter a mode where all built-in rules are bypassed. Every utterance is sent directly to the AI agent. Say **"exit chat"** or **"goodbye"** to return to normal command mode.
 
 ---
 

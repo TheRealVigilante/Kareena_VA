@@ -10,6 +10,7 @@ import re
 import time as ti
 import webbrowser
 from time import sleep
+from pathlib import Path
 
 import clipboard
 import psutil
@@ -146,27 +147,124 @@ def speak(audio: str) -> None:
     engine.say(cleaned)
     engine.runAndWait()
 
-def takeCommand():
-    """Listen for a voice command, update status, return the recognised text."""
+def takeCommand(max_retries: int = 3):
+    """Listen for a voice command with up to *max_retries* attempts.
+
+    On each failed recognition the user is prompted to retry with an
+    audible message counting the attempt. Returns None only after all
+    retries are exhausted.
+    """
     r = sr.Recognizer()
-    with sr.Microphone() as source:
-        _status_fn("Listening...")
-        r.pause_threshold = 0.7
-        audio = r.listen(source)
-    try:
-        _status_fn("Recognising...")
-        query = r.recognize_google(audio, language='en')
-        _log_fn(f"You: {query}")
-        _status_fn("Idle")
-        return query
-    except Exception:
-        _status_fn("Idle")
-        speak("Say that again please.")
-        return None
+    for attempt in range(1, max_retries + 1):
+        try:
+            with sr.Microphone() as source:
+                _status_fn("Listening...")
+                r.pause_threshold = 0.7
+                audio = r.listen(source)
+            _status_fn("Recognising...")
+            query = r.recognize_google(audio, language='en')
+            _log_fn(f"You: {query}")
+            _status_fn("Idle")
+            return query
+        except Exception:
+            _status_fn("Idle")
+            if attempt < max_retries:
+                speak(f"I didn't catch that. Attempt {attempt + 1} of {max_retries} — please try again.")
+            else:
+                speak("I couldn't understand after several tries. Please speak clearly and try again.")
+                _log_fn("[Voice] Recognition failed after all retries.")
+    return None
 
 # ---------------------------------------------------------------------------
 # Feature functions
 # ---------------------------------------------------------------------------
+
+def battery() -> None:
+    """Report the current battery level and charging state."""
+    batt = psutil.sensors_battery()
+    if batt is None:
+        speak("I couldn't detect a battery. This machine may be a desktop.")
+        return
+    percent = round(batt.percent)
+    plugged = batt.power_plugged
+    secs_left = batt.secsleft
+
+    if plugged:
+        state = "charging"
+    else:
+        state = "discharging"
+
+    if secs_left not in (psutil.POWER_TIME_UNKNOWN, psutil.POWER_TIME_UNLIMITED) and not plugged:
+        hours, rem = divmod(int(secs_left), 3600)
+        minutes = rem // 60
+        time_str = f"{hours} hour{'s' if hours != 1 else ''} and {minutes} minute{'s' if minutes != 1 else ''} remaining"
+    else:
+        time_str = "plugged in" if plugged else "time remaining unknown"
+
+    msg = f"Your battery is at {percent} percent and currently {state}. {time_str}."
+    _log_fn(f"Battery: {msg}")
+    speak(msg)
+
+
+def show_calendar() -> None:
+    """Display and speak the current month's calendar."""
+    now = datetime.datetime.now()
+    month_name = now.strftime("%B")
+    year = now.year
+    cal_text = calendar.month(year, now.month)
+    _log_fn(f"\n{cal_text}")
+    speak(f"Here is the calendar for {month_name} {year}. Check the chat log for the full view.")
+
+
+def delete_todo() -> None:
+    """List saved to-dos and let the user delete one by number."""
+    if not os.path.exists("data.txt"):
+        speak("You have no saved to-dos to delete.")
+        return
+    with open("data.txt", "r", encoding="utf-8") as f:
+        lines = [l.rstrip() for l in f if l.strip()]
+    if not lines:
+        speak("Your to-do list is empty.")
+        return
+    # Read all todos aloud with numbers
+    enumerated = "\n".join(f"{i + 1}. {l}" for i, l in enumerate(lines))
+    _log_fn(f"Saved to-dos:\n{enumerated}")
+    speak("Here are your saved to-dos. " + ". ".join(f"Number {i + 1}: {l}" for i, l in enumerate(lines)))
+    speak("Which number would you like to delete?")
+    response = takeCommand()
+    if not response:
+        speak("Cancelling deletion.")
+        return
+    # Extract a digit from the response
+    digits = re.findall(r'\d+', response)
+    if not digits:
+        speak("I couldn't find a number in your response. Cancelling.")
+        return
+    idx = int(digits[0]) - 1
+    if idx < 0 or idx >= len(lines):
+        speak(f"There is no item number {idx + 1}.")
+        return
+    removed = lines.pop(idx)
+    with open("data.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + ("\n" if lines else ""))
+    speak(f"Deleted: {removed}.")
+    _log_fn(f"[ToDo] Deleted item: {removed}")
+
+
+def clear_todos() -> None:
+    """Ask for confirmation then wipe the entire to-do list."""
+    if not os.path.exists("data.txt"):
+        speak("You have no saved to-dos.")
+        return
+    speak("Are you sure you want to clear all to-dos? Say yes to confirm.")
+    response = takeCommand()
+    if response and "yes" in response.lower():
+        open("data.txt", "w").close()
+        speak("All to-dos have been cleared.")
+        _log_fn("[ToDo] All to-dos cleared.")
+    else:
+        speak("Cancelled. Your to-dos are safe.")
+
 
 def weather(city):
     base_url = "http://api.openweathermap.org/data/2.5/weather"
@@ -271,6 +369,7 @@ def instructions():
         "Tell me your name — say 'tell me your name'",
         "What day is it — say 'day'",
         "What time is it — say 'what time'",
+        "Show this month's calendar — say 'calendar'",
         "Play a YouTube video — say 'youtube'",
         "Send a WhatsApp message — say 'message'",
         "Get the weather — say 'weather'",
@@ -278,10 +377,14 @@ def instructions():
         "Tell a joke — say 'joke'",
         "Save a to-do — say 'to do'",
         "Show saved to-dos — say 'saved'",
+        "Delete a to-do — say 'delete to do'",
+        "Clear all to-dos — say 'clear to dos'",
+        "Battery status — say 'battery'",
         "Take a screenshot — say 'screenshot'",
         "CPU usage — say 'cpu'",
         "Set a timer — say 'timer'",
         "Start a stopwatch — say 'stopwatch'",
+        "Free-chat mode (bypass all built-in rules) — say 'chat'",
         "Ask the AI agent anything — say 'agent' followed by your question",
         "Exit — say 'exit'",
     ]
@@ -291,7 +394,7 @@ def instructions():
 
 
 def intro():
-    speak("Always say 'hello' to activate me — it is my wake word.")
+    speak("I am ready to listen. Since the wake word has been removed, I will process everything you say.")
     speak("Say 'instructions' to get a full list of commands.")
 
 
@@ -315,6 +418,29 @@ def _run_agent(query: str) -> None:
         _status_fn("Idle")
 
 
+def _chat_mode(stop_event) -> None:
+    """Free-chat loop — routes every utterance directly to the agent
+    bypassing built-in commands. Exit by saying 'exit chat',
+    'stop chat', or 'goodbye'.
+    """
+    _status_fn("Chat Mode — say 'exit chat' to stop")
+    speak("Entering chat mode. You can talk to me freely now. Say 'exit chat' or 'goodbye' to go back to normal.")
+    _log_fn("[Chat Mode] Started")
+    while not stop_event.is_set():
+        query = takeCommand()
+        if not query:
+            continue
+        q_lower = query.lower()
+        # Exit phrases
+        if any(phrase in q_lower for phrase in ("exit chat", "stop chat", "goodbye", "bye")):
+            speak("Leaving chat mode.")
+            _log_fn("[Chat Mode] Ended")
+            _status_fn("Idle")
+            return
+        _run_agent(query)
+    _status_fn("Idle")
+
+
 # ---------------------------------------------------------------------------
 # Main query loop  (runs in a background thread)
 # ---------------------------------------------------------------------------
@@ -331,14 +457,11 @@ def take_query(stop_event):
                 continue
             query = query.lower()
 
-            if "hello" not in query:
-                continue
-
             if "instructions" in query:
                 instructions()
 
             elif "website" in query:
-                q = re.sub(r'website|open|hello', '', query).strip().replace(' ', '')
+                q = re.sub(r'website|open', '', query).strip().replace(' ', '')
                 url = f"https://www.{q}.com"
                 if url_exists(url):
                     speak(f"Opening {q}")
@@ -374,12 +497,15 @@ def take_query(stop_event):
             elif "day" in query:
                 getDate()
 
+            elif "calendar" in query:
+                show_calendar()
+
             elif "what time" in query:
                 tellTime()
 
             elif "from wikipedia" in query:
                 speak("Checking Wikipedia")
-                q = re.sub(r'wikipedia|hello|from|search', '', query).strip()
+                q = re.sub(r'wikipedia|from|search', '', query).strip()
                 result = wikipedia.summary(q, sentences=3)
                 _log_fn(f"Wikipedia: {result}")
                 speak(f"According to Wikipedia: {result}")
@@ -412,6 +538,12 @@ def take_query(stop_event):
                 _log_fn(f"Joke: {joke}")
                 speak(joke)
 
+            elif "clear to do" in query or "clear todos" in query:
+                clear_todos()
+
+            elif "delete to do" in query:
+                delete_todo()
+
             elif "to do" in query:
                 todo()
 
@@ -428,6 +560,9 @@ def take_query(stop_event):
                 speak("Taking a screenshot")
                 pyautogui.screenshot(str(ti.time()) + ".png").show()
 
+            elif "battery" in query:
+                battery()
+
             elif "cpu" in query:
                 usage = str(psutil.cpu_percent())
                 _log_fn(f"CPU usage: {usage}%")
@@ -441,9 +576,12 @@ def take_query(stop_event):
                 speak("Opening the stopwatch")
                 StopWatchApp.stopwatch_main()
 
+            elif "chat" in query and "agent" not in query:
+                _chat_mode(stop_event)
+
             elif "agent" in query:
-                # Explicit agent invocation — strip wake words and pass rest to agent
-                q = re.sub(r'\bhello\b|\bagent\b', '', query).strip()
+                # Explicit agent invocation — pass rest to agent
+                q = re.sub(r'\bagent\b', '', query).strip()
                 if not q:
                     speak("Sure, what would you like me to help with?")
                     q = takeCommand()
@@ -457,7 +595,7 @@ def take_query(stop_event):
 
             else:
                 # Nothing matched — pass to the agent as a smart fallback
-                q = query.replace("hello", "").strip()
+                q = query.strip()
                 _run_agent(q)
 
         except AttributeError:
