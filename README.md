@@ -142,6 +142,9 @@ Or with the environment activated:
 python src/main.py
 ```
 
+> **Want to test everything?**  
+> Check out the [test.md](test.md) file for a comprehensive list of commands and features to try!
+
 ---
 
 ## How It Works
